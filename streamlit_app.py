@@ -8,7 +8,7 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
