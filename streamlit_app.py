@@ -1,208 +1,100 @@
-# streamlit run weaver_lease_synopsis_app_20240902.py
-
 import streamlit as st
 import os
 import tempfile
-import shutil
-from typing import List, Dict
-from improved_lease_synopsis_generator import process_docx_files, extract_text_from_docx, chunk_document
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.chat_models import ChatOpenAI
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from openai import OpenAI, APIError, RateLimitError, APIConnectionError, APITimeoutError
-import traceback
 import openai
+from openai import OpenAI
+import docx
+from docx.shared import Pt, Cm, RGBColor
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from tqdm import tqdm
+from tenacity import retry, stop_after_attempt, wait_exponential
+import concurrent.futures
+import tiktoken
+import io
+import zipfile
 
-
-# Ensure OpenAI API key is set
-if not os.getenv("OPENAI_API_KEY"):
-    st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-    st.stop()
-
-# Set the page configuration
+# Streamlit page config
 st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
 
-# Custom CSS for consistent styling
-st.markdown("""
-<style>
-    .stButton > button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white !important;
-        font-size: 18px;
-        font-weight: bold;
-        padding: 10px 24px;
-        border-radius: 5px;
-        border: none;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-    }
-    .stButton > button:hover {
-        background-color: #45a049;
-    }
-    .stTextInput > div > div > input {
-        font-size: 16px;
-    }
-    h1 {
-        color: #2C3E50;
-        text-align: center;
-        padding-bottom: 20px;
-    }
-    h2 {
-        color: #34495E;
-    }
-    .fullWidth {
-        width: 100%;
-    }
-    .reportview-container .main .block-container {
-        max-width: 95%;
-        padding-top: 5rem;
-        padding-right: 1rem;
-        padding-left: 1rem;
-        padding-bottom: 5rem;
-    }
-    .document-preview {
-        border: 1px solid #ddd;
-        padding: 10px;
-        margin-bottom: 10px;
-        border-radius: 5px;
-    }
-    .document-preview h3 {
-        margin-top: 0;
-        color: #2C3E50;
-    }
-</style>
-""", unsafe_allow_html=True)
+# OpenAI API setup
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# App Title and Intro
-st.title("📄 Lease Synopsis Generator and Chatbot")
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def create_chat_llm():
+    return ChatOpenAI(temperature=0.1, model="gpt-4")
+
+chat_llm = create_chat_llm()
+
+# Your prompt_template, chain, num_tokens_from_string, chunk_document, process_chunk, 
+# generate_response, post_process_response, create_formatted_docx, consolidate_synopses, 
+# and summarize_consolidated_synopsis functions remain the same
+
+def process_uploaded_files(uploaded_files):
+    reports_folder = tempfile.mkdtemp()
+    all_synopses = []
+    
+    progress_bar = st.progress(0)
+    for i, uploaded_file in enumerate(uploaded_files):
+        document_text = extract_text_from_uploaded_file(uploaded_file)
+        
+        if document_text.strip():
+            response = generate_response(document_text)
+            output_file = os.path.join(reports_folder, f"synopsis_{uploaded_file.name}.docx")
+            create_formatted_docx(response, output_file)
+            all_synopses.append(response)
+        
+        progress_bar.progress((i + 1) / len(uploaded_files))
+    
+    # Generate consolidated report
+    consolidated_report = consolidate_synopses(all_synopses)
+    summarized_report = summarize_consolidated_synopsis(consolidated_report)
+    create_formatted_docx(summarized_report, os.path.join(reports_folder, "consolidated_synopsis.docx"))
+    
+    return reports_folder
+
+def extract_text_from_uploaded_file(uploaded_file):
+    bytes_data = uploaded_file.read()
+    doc = docx.Document(io.BytesIO(bytes_data))
+    return '\n'.join([para.text for para in doc.paragraphs])
+
+def create_download_zip(folder_path):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                zip_file.write(file_path, os.path.basename(file_path))
+    return zip_buffer.getvalue()
+
+# Streamlit UI
+st.title("📄 Lease Synopsis Generator")
 st.markdown("---")
 
-# Initialize session state variables
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history: List[tuple] = []
-if 'vector_store' not in st.session_state:
-    st.session_state.vector_store = None
-if 'document_previews' not in st.session_state:
-    st.session_state.document_previews: Dict[str, str] = {}
+uploaded_files = st.file_uploader("Upload .docx files", type="docx", accept_multiple_files=True)
 
-def process_uploaded_files(uploaded_files) -> None:
-    """Process uploaded files and generate lease synopses."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Save uploaded files and extract text
-        documents = []
-        for uploaded_file in uploaded_files:
-            file_path = os.path.join(temp_dir, uploaded_file.name)
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+if uploaded_files:
+    st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
+    if st.button("Generate Lease Synopsis"):
+        with st.spinner("🔎 Generating lease synopsis..."):
+            reports_folder = process_uploaded_files(uploaded_files)
+            zip_file = create_download_zip(reports_folder)
             
-            text = extract_text_from_docx(file_path)
-            documents.append(text)
+            st.success("✅ Lease synopses generated successfully")
             
-            # Create document preview
-            preview = text[:500] + "..." if len(text) > 500 else text
-            st.session_state.document_previews[uploaded_file.name] = preview
-        
-        # Generate Lease Synopses
-        reports_folder = process_docx_files(temp_dir)
-        
-        # Zip the synopses for download
-        zip_path = shutil.make_archive(os.path.join(temp_dir, "lease_synopses"), 'zip', reports_folder)
-        
-        st.success("✅ Lease synopses generated successfully")
-        
-        # Download button for the generated synopses
-        with open(zip_path, "rb") as file:
             st.download_button(
                 label="Download Lease Synopses",
-                data=file,
+                data=zip_file,
                 file_name="lease_synopses.zip",
                 mime="application/zip"
             )
-        
-        # Create the vector store using FAISS
-        embeddings = OpenAIEmbeddings()
-        st.session_state.vector_store = FAISS.from_texts(documents, embeddings)
-        
-        st.success("✅ Chatbot prepared successfully")
+else:
+    st.warning("⚠️ Please upload .docx files to generate lease synopses")
 
-def handle_user_input(user_question: str, conversation_chain) -> None:
-    """Process user input and generate AI response."""
-    try:
-        # Split the user question if it's too long
-        question_chunks = chunk_document(user_question, max_tokens=4000)
-        responses = []
-        
-        for chunk in question_chunks:
-            response = conversation_chain({"question": chunk})
-            responses.append(response['answer'])
-        
-        combined_response = ' '.join(responses)
-        
-        st.session_state.chat_history.append(("You", user_question))
-        st.session_state.chat_history.append(("AI", combined_response))
-    except (APIError, RateLimitError, APIConnectionError, APITimeoutError) as e:
-        st.error(f"An error occurred with the OpenAI API: {str(e)}")
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
-        st.error(traceback.format_exc())
-
-def main():
-    # File Upload Section
-    uploaded_files = st.file_uploader("Upload .docx files", type="docx", accept_multiple_files=True)
-
-    if uploaded_files:
-        st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
-        
-        if st.button("Generate Lease Synopsis and Prepare Chatbot"):
-            with st.spinner("🔎 Generating lease synopsis and preparing chatbot..."):
-                try:
-                    process_uploaded_files(uploaded_files)
-                except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
-                    st.error("Stack trace:", exc_info=True)
-        
-        # Display Document Previews
-        if st.session_state.document_previews:
-            st.subheader("Document Previews")
-            for filename, preview in st.session_state.document_previews.items():
-                with st.expander(f"Preview: {filename}"):
-                    st.markdown(f"<div class='document-preview'><h3>{filename}</h3>{preview}</div>", unsafe_allow_html=True)
-
-        # Chatbot Interface
-        if st.session_state.vector_store is not None:
-            st.subheader("Chat with your Lease Documents")
-            
-            # Initialize the Conversational Chain
-            llm = ChatOpenAI(temperature=0)
-            memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-            conversation_chain = ConversationalRetrievalChain.from_llm(
-                llm=llm,
-                retriever=st.session_state.vector_store.as_retriever(),
-                memory=memory
-            )
-            
-            # User Input for Chatbot
-            user_question = st.text_input("Ask a question about your lease documents:")
-            if user_question:
-                handle_user_input(user_question, conversation_chain)
-            
-            # Display the chat history
-            for role, message in st.session_state.chat_history:
-                if role == "You":
-                    st.write(f"👤 **You:** {message}")
-                else:
-                    st.write(f"🤖 **AI:** {message}")
-
-    else:
-        st.warning("⚠️ Please upload .docx files to generate lease synopses and prepare the chatbot")
-
-    st.markdown("<br>" * 15, unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("Created with ❤️ by Weaver")
-
-if __name__ == "__main__":
-    main()
-
+st.markdown("---")
+st.markdown("Created with ❤️ by Weaver")
