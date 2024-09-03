@@ -15,6 +15,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 import concurrent.futures
+import streamlit as st
 
 os.environ['OPENAI_API_KEY'] = st.secrets["openai"]["api_key"]
 openai.api_key = st.secrets["openai"]["api_key"]
