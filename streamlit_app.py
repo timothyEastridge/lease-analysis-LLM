@@ -1,16 +1,18 @@
 import streamlit as st
 import os
 import tempfile
-from openai import OpenAI
 import docx
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from langchain_community.chat_models import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from openai import OpenAI, APIError, RateLimitError, APIConnectionError, APITimeoutError
+import openai
 from tqdm import tqdm
 from tenacity import retry, stop_after_attempt, wait_exponential
 import concurrent.futures
