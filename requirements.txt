@@ -1,1 +1,7 @@
 streamlit
+openai
+langchain
+langchain_openai
+python-docx
+pandas
+pytz
