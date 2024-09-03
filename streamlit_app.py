@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import tempfile
-import openai
 from openai import OpenAI
 import docx
 from docx.shared import Pt, Cm, RGBColor
@@ -23,7 +22,7 @@ import zipfile
 st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
 
 # OpenAI API setup
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_chat_llm():
