@@ -5,3 +5,6 @@ langchain_openai
 python-docx
 pandas
 pytz
+tiktoken
+tenacity
+tqdm
