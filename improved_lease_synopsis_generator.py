@@ -1,8 +1,7 @@
-
-
 import os
 import keyring
 import openai
+from openai import OpenAI
 import docx
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.style import WD_STYLE_TYPE
@@ -15,10 +14,13 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 import concurrent.futures
-import streamlit as st
+import tiktoken
 
-os.environ['OPENAI_API_KEY'] = st.secrets["openai"]["api_key"]
-openai.api_key = st.secrets["openai"]["api_key"]
+# Streamlit page config
+st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
+
+# OpenAI API setup
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_chat_llm():
@@ -27,12 +29,18 @@ def create_chat_llm():
 chat_llm = create_chat_llm()
 
 prompt_template = """
-You are an expert in lease document analysis. Given a lease document or a portion of a lease document, extract the following information. Be concise and specific. If information is not found or not applicable, write "" instead of "N/A". Do not include duplicate or redundant information.
+You are an expert in lease document analysis. Given a lease document or a portion of a lease document, extract the following information. Be concise and only return the information requested of you. If information is not found or not applicable, write "" instead of "N/A". Do not include duplicate or redundant information.
 
+Location (e.g. 'Memorial City Towers, Ltd.'): 
+Address:
 Tenant Reference Name (doing business as):
 Tenant Entity:
 Guarantor: (keep this concise. For example, instead of Cenovus Energy Inc., a Canadian corporation just say Cenovus Energy Inc.)
-List of Documents:
+Tenant's Notice Address (prior to occupancy):
+Tenant's Notice Address (after occupancy):
+Landlord's Notice Address (if mailed):
+Landlord's Notice Address (if delivered):
+Landlord's Payment Address:
 Leased Premises:
 Square Feet:
 Commencement Date:
@@ -56,6 +64,10 @@ Holdover:
 Broker/Commission:
 Notice Address: (be sure to look for corporate address. for example, Leased PremisesWith a copy of all notices of default to the Guarantor at: Cenovus Energy Inc. 225 6 Avenue SW Calgary, AB T 2P 1N2 Attn: Director, Enterprise Compliance & Credit email: creditgroup@cenovus.com copy to: downstream.legal@cenovus.com)
 Other Provisions:
+Hazardous Material:
+Insurance:
+Tenant's Broker:
+Special Provisions:
 
 Document Text: {document_text}
 """
@@ -63,11 +75,17 @@ Document Text: {document_text}
 prompt = PromptTemplate(template=prompt_template, input_variables=["document_text"])
 chain = LLMChain(llm=chat_llm, prompt=prompt)
 
-def chunk_document(text, chunk_size=6000, chunk_overlap=200):
+def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
+    """Returns the number of tokens in a text string."""
+    encoding = tiktoken.get_encoding(encoding_name)
+    num_tokens = len(encoding.encode(string))
+    return num_tokens
+
+def chunk_document(text, max_tokens=4000, chunk_overlap=200):
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
+        chunk_size=max_tokens,
         chunk_overlap=chunk_overlap,
-        length_function=len
+        length_function=lambda x: num_tokens_from_string(x)
     )
     return text_splitter.split_text(text)
 
@@ -223,17 +241,24 @@ def consolidate_synopses(all_synopses):
     
     return '\n'.join([f"{key}: {value}" for key, value in consolidated.items()])
 
-# NEW: Added function to summarize consolidated synopsis
 def summarize_consolidated_synopsis(consolidated_synopsis):
     summary_prompt_template = """
-    You are an expert in lease document analysis. Given the following concatenated lease document information, simplify the redundant parts of the text but maintain all the relevant detail:
+    You are an expert in lease document analysis. Be concise and only return the information requested of you. Given the following concatenated lease document information, simplify the redundant parts of the text but maintain all the relevant detail:
     Consolidated Information: {consolidated_synopsis}
     """
     
     summary_prompt = PromptTemplate(template=summary_prompt_template, input_variables=["consolidated_synopsis"])
     summary_chain = LLMChain(llm=chat_llm, prompt=summary_prompt)
     
-    return summary_chain.invoke({"consolidated_synopsis": consolidated_synopsis}).get('text', '').strip()
+    # Split the consolidated synopsis if it's too long
+    chunks = chunk_document(consolidated_synopsis, max_tokens=8000)  # Adjust max_tokens as needed
+    summarized_chunks = []
+    
+    for chunk in chunks:
+        summarized_chunk = summary_chain.invoke({"consolidated_synopsis": chunk}).get('text', '').strip()
+        summarized_chunks.append(summarized_chunk)
+    
+    return '\n\n'.join(summarized_chunks)
 
 if __name__ == "__main__":
     folder_path = r'C:\\Users\\TimEa\\OneDrive\\Data\\Weaver'
