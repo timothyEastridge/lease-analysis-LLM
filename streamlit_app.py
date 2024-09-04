@@ -63,16 +63,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # OpenAI API key setup
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("OpenAI API key not found in Streamlit secrets. Please add it to your app's secrets.")
+if "openai" not in st.secrets or "api_key" not in st.secrets["openai"]:
+    st.error("OpenAI API key not found in Streamlit secrets. Please add it to your app's secrets under [openai] api_key.")
     st.stop()
 
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+openai_api_key = st.secrets["openai"]["api_key"]
 client = OpenAI(api_key=openai_api_key)
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_chat_llm():
-    return ChatOpenAI(temperature=0.1, model="gpt-4", openai_api_key=openai_api_key)
+    return ChatOpenAI(temperature=0.1, model="gpt-4o", openai_api_key=openai_api_key)
 
 chat_llm = create_chat_llm()
 
