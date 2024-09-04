@@ -291,15 +291,6 @@ def process_uploaded_files(uploaded_files):
     
     return reports_folder
 
-# File preview function
-def show_file_preview(uploaded_file):
-    if uploaded_file is not None:
-        st.write("File Preview:")
-        doc = docx.Document(io.BytesIO(uploaded_file.getvalue()))
-        for para in doc.paragraphs[:5]:  # Show first 5 paragraphs
-            st.write(para.text)
-        st.write("...")
-
 # Chatbot function
 def chatbot(user_input):
     response = client.chat.completions.create(
@@ -319,10 +310,4 @@ uploaded_files = st.file_uploader("Upload .docx files", type="docx", accept_mult
 
 if uploaded_files:
     st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
-    
-    # File preview
-    if len(uploaded_files) == 1:
-        show_file_preview(uploaded_files[0])
-    else:
-        selected_file = st.selectbox("Select a file to preview", uploaded_files)
-        show_file_preview(selected_file)
+
