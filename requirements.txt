@@ -7,6 +7,5 @@ tqdm
 tenacity
 tiktoken
 typing
-io
 zipfile
 
