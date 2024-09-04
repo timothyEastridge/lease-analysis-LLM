@@ -14,11 +14,6 @@ import traceback
 import openai
 import docx
 
-# Ensure OpenAI API key is set
-if not os.getenv("OPENAI_API_KEY"):
-    st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-    st.stop()
-
 # Set the page configuration
 st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
 
@@ -78,11 +73,22 @@ st.markdown("""
 st.title("📄 Lease Synopsis Generator and Chatbot")
 st.markdown("---")
 
+# OpenAI API key setup using Streamlit secrets
+if "openai" not in st.secrets or "api_key" not in st.secrets["openai"]:
+    st.error("OpenAI API key not found in Streamlit secrets. Please add it to your app's secrets under [openai] api_key.")
+    st.stop()
+
+openai_api_key = st.secrets["openai"]["api_key"]
+os.environ["OPENAI_API_KEY"] = openai_api_key
+openai.api_key = openai_api_key
+
 # Initialize session state variables
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history: List[tuple] = []
 if 'vector_store' not in st.session_state:
     st.session_state.vector_store = None
+if 'document_previews' not in st.session_state:
+    st.session_state.document_previews: Dict[str, str] = {}
 
 def process_uploaded_files(uploaded_files) -> None:
     """Process uploaded files and generate lease synopses."""
@@ -97,6 +103,9 @@ def process_uploaded_files(uploaded_files) -> None:
             text = extract_text_from_docx(file_path)
             documents.append(text)
             
+            # Create document preview
+            preview = text[:500] + "..." if len(text) > 500 else text
+            st.session_state.document_previews[uploaded_file.name] = preview
         
         # Generate Lease Synopses
         reports_folder = process_docx_files(temp_dir)
@@ -142,6 +151,14 @@ def handle_user_input(user_question: str, conversation_chain) -> None:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.error(traceback.format_exc())
 
+def show_file_preview(uploaded_file):
+    """Display a preview of the uploaded file."""
+    if uploaded_file is not None:
+        st.write("File Preview:")
+        doc = docx.Document(uploaded_file)
+        for para in doc.paragraphs[:5]:  # Show first 5 paragraphs
+            st.write(para.text)
+        st.write("...")
 
 def main():
     # File Upload Section
@@ -150,6 +167,12 @@ def main():
     if uploaded_files:
         st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
         
+        # File preview
+        if len(uploaded_files) == 1:
+            show_file_preview(uploaded_files[0])
+        else:
+            selected_file = st.selectbox("Select a file to preview", uploaded_files)
+            show_file_preview(selected_file)
         
         if st.button("Generate Lease Synopsis and Prepare Chatbot"):
             with st.spinner("🔎 Generating lease synopsis and preparing chatbot..."):
