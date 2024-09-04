@@ -23,8 +23,26 @@ import zipfile
 # Streamlit page config
 st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
 
+# OpenAI API key setup
+def get_openai_api_key():
+    # First, try to get the API key from Streamlit secrets
+    api_key = st.secrets.get("OPENAI_API_KEY")
+    
+    # If not found in secrets, try to get it from environment variables
+    if api_key is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+    
+    # If still not found, prompt the user to enter it
+    if api_key is None:
+        api_key = st.text_input("Enter your OpenAI API key:", type="password")
+        if not api_key:
+            st.error("Please enter a valid OpenAI API key to proceed.")
+            st.stop()
+    
+    return api_key
+
 # OpenAI API setup
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = OpenAI(api_key=get_openai_api_key())
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_chat_llm():
