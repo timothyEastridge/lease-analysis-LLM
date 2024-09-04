@@ -72,7 +72,7 @@ client = OpenAI(api_key=openai_api_key)
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_chat_llm():
-    return ChatOpenAI(temperature=0.1, model="gpt-4o", openai_api_key=openai_api_key)
+    return ChatOpenAI(temperature=0.1, model="gpt-4", openai_api_key=openai_api_key)
 
 chat_llm = create_chat_llm()
 
@@ -291,6 +291,26 @@ def process_uploaded_files(uploaded_files):
     
     return reports_folder
 
+# File preview function
+def show_file_preview(uploaded_file):
+    if uploaded_file is not None:
+        st.write("File Preview:")
+        doc = docx.Document(io.BytesIO(uploaded_file.getvalue()))
+        for para in doc.paragraphs[:5]:  # Show first 5 paragraphs
+            st.write(para.text)
+        st.write("...")
+
+# Chatbot function
+def chatbot(user_input):
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant specializing in lease document analysis."},
+            {"role": "user", "content": user_input}
+        ]
+    )
+    return response.choices[0].message.content
+
 # Streamlit UI
 st.title("📄 Lease Synopsis Generator")
 st.markdown("---")
@@ -299,21 +319,10 @@ uploaded_files = st.file_uploader("Upload .docx files", type="docx", accept_mult
 
 if uploaded_files:
     st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
-    if st.button("Generate Lease Synopsis"):
-        with st.spinner("🔎 Generating lease synopsis..."):
-            reports_folder = process_uploaded_files(uploaded_files)
-            zip_file = create_download_zip(reports_folder)
-            
-            st.success("✅ Lease synopses generated successfully")
-            
-            st.download_button(
-                label="Download Lease Synopses",
-                data=zip_file,
-                file_name="lease_synopses.zip",
-                mime="application/zip"
-            )
-else:
-    st.warning("⚠️ Please upload .docx files to generate lease synopses")
-
-st.markdown("---")
-st.markdown("Created with ❤️ by Weaver")
+    
+    # File preview
+    if len(uploaded_files) == 1:
+        show_file_preview(uploaded_files[0])
+    else:
+        selected_file = st.selectbox("Select a file to preview", uploaded_files)
+        show_file_preview(selected_file)
