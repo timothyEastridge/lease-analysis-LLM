@@ -1,5 +1,5 @@
 import os
-import keyring
+# import keyring
 import openai
 from openai import OpenAI
 import docx
@@ -19,12 +19,13 @@ import tiktoken
 # Streamlit page config
 st.set_page_config(layout='wide', page_title="Lease Synopsis Generator", page_icon="📄")
 
-# OpenAI API setup
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+if "openai" not in st.secrets or "api_key" not in st.secrets["openai"]:
+    st.error("OpenAI API key not found in Streamlit secrets. Please add it to your app's secrets under [openai] api_key.")
+    st.stop()
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def create_chat_llm():
-    return ChatOpenAI(temperature=0.1, model="gpt-4o")
+openai_api_key = st.secrets["openai"]["api_key"]
+os.environ["OPENAI_API_KEY"] = openai_api_key
+openai.api_key = openai_api_key
 
 chat_llm = create_chat_llm()
 
