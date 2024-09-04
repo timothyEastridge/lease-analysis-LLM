@@ -6,7 +6,6 @@ langchain-community
 tqdm
 tenacity
 tiktoken
-tempfile
 shtil
 typing
 traceback
