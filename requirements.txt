@@ -7,5 +7,5 @@ tqdm
 tenacity
 tiktoken
 typing
-faiss-gpu
+faiss-cpu
 
