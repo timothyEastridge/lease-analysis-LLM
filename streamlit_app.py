@@ -378,12 +378,7 @@ def main():
     if uploaded_files:
         st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
         
-        # File preview
-        if len(uploaded_files) == 1:
-            show_file_preview(uploaded_files[0])
-        else:
-            selected_file = st.selectbox("Select a file to preview", uploaded_files)
-            show_file_preview(selected_file)
+
         
         if st.button("Generate Lease Synopsis and Prepare Chatbot"):
             with st.spinner("🔎 Generating lease synopsis and preparing chatbot..."):
