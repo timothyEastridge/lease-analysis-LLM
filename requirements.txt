@@ -6,3 +6,11 @@ langchain-community
 tqdm
 tenacity
 tiktoken
+os
+tempfile
+shtil
+typing
+traceback
+io
+zipfile
+
