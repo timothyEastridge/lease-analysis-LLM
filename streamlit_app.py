@@ -63,18 +63,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # OpenAI API key setup
-def get_openai_api_key():
-    api_key = st.secrets.get("OPENAI_API_KEY")
-    if api_key is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
-    if api_key is None:
-        api_key = st.text_input("Enter your OpenAI API key:", type="password")
-        if not api_key:
-            st.error("Please enter a valid OpenAI API key to proceed.")
-            st.stop()
-    return api_key
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OpenAI API key not found in Streamlit secrets. Please add it to your app's secrets.")
+    st.stop()
 
-openai_api_key = get_openai_api_key()
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=openai_api_key)
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
@@ -184,35 +177,10 @@ def post_process_response(response):
     
     return final_response
 
-def extract_text_from_docx(docx_path):
-    doc = docx.Document(docx_path)
+def extract_text_from_uploaded_file(uploaded_file):
+    bytes_data = uploaded_file.read()
+    doc = docx.Document(io.BytesIO(bytes_data))
     return '\n'.join([para.text for para in doc.paragraphs])
-
-def process_docx_files(folder_path):
-    docx_files = [file for file in os.listdir(folder_path) if file.endswith('.docx')]
-    reports_folder = os.path.join(folder_path, 'Reports')
-    os.makedirs(reports_folder, exist_ok=True)
-    
-    all_synopses = []
-    
-    with tqdm(total=len(docx_files), desc="Processing lease documents") as pbar:
-        for docx_file in docx_files:
-            docx_path = os.path.join(folder_path, docx_file)
-            document_text = extract_text_from_docx(docx_path)
-            
-            if document_text.strip():
-                response = generate_response(document_text)
-                output_file = os.path.join(reports_folder, f"synopsis_{os.path.splitext(docx_file)[0]}.docx")
-                create_formatted_docx(response, output_file)
-                all_synopses.append(response)
-            pbar.update(1)
-    
-    consolidated_report = consolidate_synopses(all_synopses)
-    summarized_report = summarize_consolidated_synopsis(consolidated_report)
-    
-    create_formatted_docx(summarized_report, os.path.join(reports_folder, "consolidated_synopsis.docx"))
-    
-    return reports_folder
 
 def create_formatted_docx(content, output_file):
     doc = docx.Document()
@@ -291,11 +259,6 @@ def summarize_consolidated_synopsis(consolidated_synopsis):
     
     return '\n\n'.join(summarized_chunks)
 
-def extract_text_from_uploaded_file(uploaded_file):
-    bytes_data = uploaded_file.read()
-    doc = docx.Document(io.BytesIO(bytes_data))
-    return '\n'.join([para.text for para in doc.paragraphs])
-
 def create_download_zip(folder_path):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
@@ -316,4 +279,41 @@ def process_uploaded_files(uploaded_files):
         if document_text.strip():
             response = generate_response(document_text)
             output_file = os.path.join(reports_folder, f"synopsis_{uploaded_file.name}.docx")
-            create_formatted_
+            create_formatted_docx(response, output_file)
+            all_synopses.append(response)
+        
+        progress_bar.progress((i + 1) / len(uploaded_files))
+    
+    consolidated_report = consolidate_synopses(all_synopses)
+    summarized_report = summarize_consolidated_synopsis(consolidated_report)
+    
+    create_formatted_docx(summarized_report, os.path.join(reports_folder, "consolidated_synopsis.docx"))
+    
+    return reports_folder
+
+# Streamlit UI
+st.title("📄 Lease Synopsis Generator")
+st.markdown("---")
+
+uploaded_files = st.file_uploader("Upload .docx files", type="docx", accept_multiple_files=True)
+
+if uploaded_files:
+    st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully")
+    if st.button("Generate Lease Synopsis"):
+        with st.spinner("🔎 Generating lease synopsis..."):
+            reports_folder = process_uploaded_files(uploaded_files)
+            zip_file = create_download_zip(reports_folder)
+            
+            st.success("✅ Lease synopses generated successfully")
+            
+            st.download_button(
+                label="Download Lease Synopses",
+                data=zip_file,
+                file_name="lease_synopses.zip",
+                mime="application/zip"
+            )
+else:
+    st.warning("⚠️ Please upload .docx files to generate lease synopses")
+
+st.markdown("---")
+st.markdown("Created with ❤️ by Weaver")
