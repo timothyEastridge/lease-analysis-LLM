@@ -163,12 +163,14 @@ def create_formatted_docx(content, output_file):
 def generate_response(document_text, chat_llm):
     prompt_template = """
     You are an expert in lease document analysis. Given a lease document or a portion of a lease document, extract the following information. Be concise and only return the information requested of you. If information is not found or not applicable, write "" instead of "N/A". Do not include duplicate or redundant information.
-
-    Location (e.g. 'Memorial City Towers, Ltd.'): 
+    
+    Please fill out the following template:
+    
+    Location:
     Address:
     Tenant Reference Name (doing business as):
     Tenant Entity:
-    Guarantor: (keep this concise. For example, instead of Cenovus Energy Inc., a Canadian corporation just say Cenovus Energy Inc.)
+    Guarantor:
     Tenant's Notice Address (prior to occupancy):
     Tenant's Notice Address (after occupancy):
     Landlord's Notice Address (if mailed):
@@ -180,10 +182,10 @@ def generate_response(document_text, chat_llm):
     Expiration Date:
     Extension Options:
     Base Rent:
-    Operating Expenses: (add as much information as possible. for example: Tenant pays proportionate share of expenses (net lease), grossed up to reflect 100% occupancy. Management fee is 4% of rents. Commencing 04/01/25, expenses are capped at 6% accumulating and compounding amounts over FYE 03/31/25 amounts, except as attributable to insurance premiums/deductibles, increases in security due to staffing levels, janitorial or other costs which increase due to unionization, utilities and real estate tax/protest costs.)
-    Parking: (add as much info as possible. For example, Up to 24 non-reserved @ $50 per month, of which up to 5 may be reserved @ $100 per month. At any point during the term, T may convert an additional 2 non-reserved parking spaces into reserved parking spaces**Non-reserved parking charges abate from 10/01/24 - 02/16/30.)
+    Operating Expenses:
+    Parking:
     Construction/Allowance:
-    Landlord's Relocation Rights: (add as much info as possible. for example, Landlord may relocate Tenant once during the term (except during first 2 years and last year of initial term and except during the  first or last year of extension option) upon 120 days prior written to another space in the building on 14th floor or higher, of a size between 100% to 110% of the premises at LL cost. Substitute premises to be improved with reasonably comparable or better quality leasehold improvements as existed in the premises. LL will provide T with at least 30 days access to the substitute premises after LL's tender  in order for T to install wiring, cabling, furniture, fixtures and equipment in the substitute premises at no cost to Tenant (Sec.3.3))
+    Landlord's Relocation Rights:
     Tenant's Preferential Rights:
     Termination Options:
     Sign Rights:
@@ -195,15 +197,16 @@ def generate_response(document_text, chat_llm):
     Default Cure Period:
     Holdover:
     Broker/Commission:
-    Notice Address: (be sure to look for corporate address. for example, Leased PremisesWith a copy of all notices of default to the Guarantor at: Cenovus Energy Inc. 225 6 Avenue SW Calgary, AB T 2P 1N2 Attn: Director, Enterprise Compliance & Credit email: creditgroup@cenovus.com copy to: downstream.legal@cenovus.com)
+    Notice Address:
     Other Provisions:
     Hazardous Material:
     Insurance:
     Tenant's Broker:
     Special Provisions:
-
+    
     Document Text: {document_text}
     """
+
     prompt = PromptTemplate(template=prompt_template, input_variables=["document_text"])
     chain = LLMChain(llm=chat_llm, prompt=prompt)
 
@@ -222,23 +225,65 @@ def generate_response(document_text, chat_llm):
         return f'Error in processing: {str(e)}'
 
 def post_process_response(response):
+    expected_fields = [
+        "Location",
+        "Address",
+        "Tenant Reference Name (doing business as)",
+        "Tenant Entity",
+        "Guarantor",
+        "Tenant's Notice Address (prior to occupancy)",
+        "Tenant's Notice Address (after occupancy)",
+        "Landlord's Notice Address (if mailed)",
+        "Landlord's Notice Address (if delivered)",
+        "Landlord's Payment Address",
+        "Leased Premises",
+        "Square Feet",
+        "Commencement Date",
+        "Expiration Date",
+        "Extension Options",
+        "Base Rent",
+        "Operating Expenses",
+        "Parking",
+        "Construction/Allowance",
+        "Landlord's Relocation Rights",
+        "Tenant's Preferential Rights",
+        "Termination Options",
+        "Sign Rights",
+        "Exclusive",
+        "Use Restrictions on Landlord",
+        "Build Restrictions on Landlord",
+        "Off-site restrictions on Landlord",
+        "Security Deposit",
+        "Default Cure Period",
+        "Holdover",
+        "Broker/Commission",
+        "Notice Address",
+        "Other Provisions",
+        "Hazardous Material",
+        "Insurance",
+        "Tenant's Broker",
+        "Special Provisions"
+    ]
     lines = response.split('\n')
-    processed_fields = {}
+    processed_fields = {field: "" for field in expected_fields}
     
     for line in lines:
         if ':' in line:
             key, value = line.split(':', 1)
             key = key.strip()
             value = value.strip().replace('*', '')
-            
-            if key not in processed_fields:
-                processed_fields[key] = value
-            elif value and value != processed_fields[key] and value != "Not specified":
-                processed_fields[key] += f"; {value}"
+            if key in processed_fields:
+                if processed_fields[key]:
+                    processed_fields[key] += f"; {value}"
+                else:
+                    processed_fields[key] = value
+            else:
+                # Handle unexpected fields if necessary
+                pass
     
-    final_response = '\n'.join([f"{key}: {value}" for key, value in processed_fields.items()])
-    
+    final_response = '\n'.join([f"{key}: {processed_fields[key]}" for key in expected_fields])
     return final_response
+
 
 def process_docx_files(folder_path):
     docx_files = [file for file in os.listdir(folder_path) if file.endswith('.docx')]
